@@ -1,0 +1,51 @@
+version: '3'
+
+volumes:
+  chatbot_backend_local_postgres_data: {}
+  chatbot_backend_local_postgres_data_backups: {}
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./compose/local/django/Dockerfile
+    image: chatbot_backend_local_django:v1
+    container_name: chatbot_backend_local_django
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app:z
+    env_file:
+      - ./.envs/.local/.django
+      - ./.envs/.local/.postgres
+    ports:
+      - '8001:8000'
+    command: /start
+
+  postgres:
+    build:
+      context: .
+      dockerfile: ./compose/production/postgres/Dockerfile
+    image: chatbot_backend_production_postgres
+    container_name: chatbot_backend_local_postgres
+    volumes:
+      - chatbot_backend_local_postgres_data:/var/lib/postgresql/data
+      - chatbot_backend_local_postgres_data_backups:/backups
+    env_file:
+      - ./.envs/.local/.postgres
+
+  docs:
+    image: chatbot_backend_local_docs
+    container_name: chatbot_backend_local_docs
+    build:
+      context: .
+      dockerfile: ./compose/local/docs/Dockerfile
+    env_file:
+      - ./.envs/.local/.django
+    volumes:
+      - ./docs:/docs:z
+      - ./config:/app/config:z
+      - ./chatbot_backend:/app/chatbot_backend:z
+    ports:
+      - '9001:9000'
+    command: /start-docs
