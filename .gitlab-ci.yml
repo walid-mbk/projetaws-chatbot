@@ -1,85 +1,45 @@
-# This file is a template, and might need editing before it works on your project.
-# This is a sample GitLab CI/CD configuration file that should run without any modifications.
-# It demonstrates a basic 3 stage CI/CD pipeline. Instead of real tests or scripts,
-# it uses echo commands to simulate the pipeline execution.
-#
-# A pipeline is composed of independent jobs that run scripts, grouped into stages.
-# Stages run in sequential order, but jobs within stages run in parallel.
-#
-# For more information, see: https://docs.gitlab.com/ee/ci/yaml/index.html#stages
-#
-# You can copy and paste this template into a new `.gitlab-ci.yml` file.
-# You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
-#
-# To contribute improvements to CI/CD templates, please follow the Development guide at:
-# https://docs.gitlab.com/ee/development/cicd/templates.html
-# This specific template is located at:
-# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
-
 stages:
-  - test        # List of stages for jobs, and their order of execution
   - build
   - deploy
 
-variables:
-  POSTGRES_USER: 'caustaza_chatbot_project'
-  POSTGRES_PASSWORD: ''
-  POSTGRES_DB: 'test_caustaza_chatbot_project'
-  POSTGRES_HOST_AUTH_METHOD: trust
+before_script:
+  - echo "Installing AWS CLI dependencies"
+  - apk add --no-cache curl jq python3 py3-pip
+  - python3 -m venv awscli-venv
+  - source awscli-venv/bin/activate
+  - pip install awscli
+  - aws --version
+  - docker --version
+  - aws configure set aws_access_key_id ${AWS_ACCESS_KEY_ID}
+  - aws configure set aws_secret_access_key ${AWS_SECRET_ACCESS_KEY}
+  - aws configure set default.region us-east-1
+  - aws configure list
 
 
 
-
-pytest:
-  stage: test
-  image: docker/compose:1.29.2
-  services:
-    - docker:dind
-  before_script:
-    #- docker-compose -f local.yml build django
-    #- docker-compose -f local.yml run --rm django python manage.py migrate
-    #- docker-compose -f local.yml up -d
-  script:
-    - docker-compose -f local.yml build django
-    #- docker tag caustaza_backend_project_local_django:latest $ECR_REGISTRY_URL/$ECR_REPO_NAME:latest
-
-push_to_ecr:
+build-chatbot:
   stage: build
-  #image:
-  # name: docker:latest
-  #services:
-  #  - docker:dind
-  tags:
-    - docker
-    - ec2
-    - aws
-    - upgraded
-  before_script:
-    #- echo "installing AWS CLI"
-    #- apk add --no-cache curl jq python3 py3-pip
-    #- pip install awscli
-    #- docker --version
-    - echo "Configuring AWS CLI..."
-    - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-    - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-    - aws configure set default.region $AWS_DEFAULT_REGION
-    - sudo docker-compose -f local.yml build django
+  image:
+    name: docker:latest
+  services:
+    - name: docker:dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   script:
-    - aws ecr get-login-password --region $AWS_DEFAULT_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY_URL
-    - sudo docker tag chatbot_backend_local_django:v1 $ECR_REGISTRY_URL/$ECR_REPO_NAME:v1
-    - sudo docker push $ECR_REGISTRY_URL/$ECR_REPO_NAME:v1
-  after_script:
-    - sudo docker image rm chatbot_backend_local_django:v1 $ECR_REGISTRY_URL/$ECR_REPO_NAME:v1
+    - unset DOCKER_HOST
+    - source awscli-venv/bin/activate
+    - aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 905418230821.dkr.ecr.eu-north-1.amazonaws.com
+    - docker build -t chatbot_backend .
+    - docker tag chatbot_backend:latest $DOCKER_IMAGE_CHATBOT
+    - docker push $DOCKER_IMAGE_CHATBOT
 
-#Further discussion, if we gonna version the application or we stick with using the latest, in this case its ok to just update the cluster, if not, then we have to create a new task reversion and then re deploy the service, and i dont think that this is a best practice.
-
-update_cluster:
+deploy-chatbot:
   stage: deploy
-  tags:
-    - docker
-    - ec2
-    - aws
-    - upgraded
+  image: bitnami/kubectl:latest
   script:
-    - aws ecs update-service --cluster CaustazaCluster --service test-chatbot-tg --force-new-deployment
-
+    - kubectl apply -f k8s-manifests/deployment.yaml
+    - kubectl apply -f k8s-manifests/service.yaml
+  only:
+    - main

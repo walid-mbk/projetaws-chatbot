@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatbot-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chatbot-backend
+  template:
+    metadata:
+      labels:
+        app: chatbot-backend
+    spec:
+      containers:
+      - name: chatbot
+        image: 905418230821.dkr.ecr.eu-north-1.amazonaws.com/smartovate_repo
+
+        ports:
+        - containerPort: 8000
